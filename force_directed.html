@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force-Directed Graph</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        /* Global Styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1d1f20;
+            color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            flex-direction: column;
+        }
+
+        h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #fafafa;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Tooltip Styling */
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 12px;
+            font: 14px sans-serif;
+            background: rgba(50, 50, 50, 0.9);
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            pointer-events: none;
+            opacity: 0;
+            color: #fff;
+            transition: opacity 0.2s ease-in-out;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+        }
+
+        /* SVG Container */
+        svg {
+            width: 80%;
+            height: 60vh;
+            background-color: #2b2d2f;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Node Styling */
+        .node {
+            stroke: #fff;
+            stroke-width: 2px;
+            cursor: pointer;
+        }
+
+        .node:hover {
+            fill: #ff4081;
+            transform: scale(1.2);
+        }
+
+        /* Link Styling */
+        .link {
+            stroke: #888;
+            stroke-opacity: 0.6;
+        }
+
+        .link:hover {
+            stroke-opacity: 1;
+            stroke: #ff4081;
+        }
+    </style>
+</head>
+<body>
+    <h2>Force-Directed Graph for TB Data Relationships</h2>
+    <div class="tooltip"></div>
+    <svg></svg> <!-- SVG container -->
+
+    <script>
+        const width = 1200;
+        const height = 800;
+
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+        const svg = d3.select("svg")
+            .attr("viewBox", [0, 0, width, height]);
+
+        const tooltip = d3.select(".tooltip");
+
+        // Load CSV data
+        d3.csv("http://localhost/my_project/data.csv").then(data => {
+            const nodes = [];
+            const links = [];
+
+            // Prepare nodes and links
+            data.forEach(d => {
+                // Add countries and regions as nodes
+                if (!nodes.find(node => node.id === d.country)) {
+                    nodes.push({
+                        id: d.country,
+                        group: "country",
+                        population: d.total_population
+                    });
+                }
+                if (!nodes.find(node => node.id === d.region)) {
+                    nodes.push({
+                        id: d.region,
+                        group: "region",
+                        hospitals: d.hospials_per_capita
+                    });
+                }
+
+                // Create links between countries and regions
+                links.push({
+                    source: d.country,
+                    target: d.region,
+                    type: "relationship"
+                });
+            });
+
+            // Add simulation for the force-directed graph
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+                .force("charge", d3.forceManyBody().strength(-7))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+
+            // Add links
+            const link = svg.append("g")
+                .selectAll("line")
+                .data(links)
+                .join("line")
+                .attr("class", "link")
+                .attr("stroke-width", 1.5)
+                .attr("stroke", "#ccc");
+
+            // Add nodes
+            const node = svg.append("g")
+                .selectAll("circle")
+                .data(nodes)
+                .join("circle")
+                .attr("class", "node")
+                .attr("r", 8)
+                .attr("fill", d => color(d.group))
+                .call(drag(simulation));
+
+            // Tooltip functionality
+            node.on("mouseover", (event, d) => {
+                tooltip.style("opacity", 1)
+                    .html(`
+                        <strong>${d.id}</strong><br>
+                        Group: ${d.group}<br>
+                        ${d.group === "country" ? "Population" : "Hospitals"}: 
+                        ${d.group === "country" ? d.population : d.hospitals || "N/A"}
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 20) + "px");
+            }).on("mouseout", () => tooltip.style("opacity", 0));
+
+            // Update positions during each tick
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+            });
+
+            // Drag functionality
+            function drag(simulation) {
+                return d3.drag()
+                    .on("start", event => {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        event.subject.fx = event.subject.x;
+                        event.subject.fy = event.subject.y;
+                    })
+                    .on("drag", event => {
+                        event.subject.fx = event.x;
+                        event.subject.fy = event.y;
+                    })
+                    .on("end", event => {
+                        if (!event.active) simulation.alphaTarget(0);
+                        event.subject.fx = null;
+                        event.subject.fy = null;
+                    });
+            }
+        });
+    </script>
+</body>
+</html>

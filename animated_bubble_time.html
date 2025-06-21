@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Data Visualization</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    #chart {
+      display: block;
+      margin: 0 auto;
+    }
+    button {
+      margin: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #legend {
+      margin: 20px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+    }
+    .legend-item {
+      margin-left: 10px;
+      font-size: 14px;
+    }
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      display: inline-block;
+      margin-right: 5px;
+    }
+
+    /* Tooltip Styles */
+    .tooltip {
+      position: absolute;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      pointer-events: none;
+      opacity: 0;  /* Initially hidden */
+      transition: opacity 0.2s;
+    }
+  </style>
+</head>
+<body>
+
+<div id="playPauseButtonContainer">
+  <button id="playButton">Play</button>
+  <button id="pauseButton" style="display: none;">Pause</button>
+</div>
+<div id="legend"></div>
+<div id="chart"></div>
+
+<!-- Tooltip Div -->
+<div id="tooltip" class="tooltip"></div>
+
+<script>
+  const margin = { top: 20, right: 20, bottom: 35, left: 60 };  // Adjusted margins
+  const width = 800;
+  const height = 600;
+
+  let intervalId;  // Variable to store the interval ID
+  let isPlaying = false; // To keep track of play/pause state
+
+  // Load data (assuming you already have a CSV file with the correct columns)
+  d3.csv("http://localhost/my_project/data.csv").then(function(data) {
+    // Transform data to get year and relevant columns
+    const years = Array.from(new Set(data.map(d => d.year)));
+    const formattedData = years.map(year => {
+      const yearData = data.filter(d => d.year == year);
+      return {
+        year: year,
+        data: yearData
+      };
+    });
+
+    // Get list of unique regions
+    const regions = Array.from(new Set(data.map(d => d.region)));
+    
+    // Create color scale for regions
+    const regionColor = d3.scaleOrdinal(d3.schemeCategory10).domain(regions);
+
+    // Create scales
+    const x = d3.scaleLinear()
+      .domain([0, d3.max(formattedData, d => d3.max(d.data, dd => +dd.total_cases))])
+      .range([margin.left, width - margin.right]);
+
+    const y = d3.scaleBand()
+      .domain(formattedData.map(d => d.year))
+      .range([margin.top, height - margin.bottom])
+      .padding(0.1);
+
+    const radius = d3.scaleSqrt()
+      .domain([0, d3.max(formattedData, d => d3.max(d.data, dd => +dd.total_cases))])
+      .range([0, 20]);
+
+    // Create SVG element
+    const svg = d3.select("#chart")
+      .append("svg")
+      .attr("viewBox", [0, 0, width, height]);
+
+    // Add X axis (for total cases)
+    svg.append("g")
+      .attr("transform", `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x))
+      .select(".domain")
+      .remove();
+
+    // Add Y axis (for year)
+    svg.append("g")
+      .attr("transform", `translate(${margin.left}, 0)`)
+      .call(d3.axisLeft(y));
+
+    // Create grid lines for X axis
+    svg.append("g")
+      .attr("transform", `translate(0,${height - margin.bottom})`)
+      .attr("class", "grid")
+      .call(d3.axisBottom(x)
+        .ticks(5)
+        .tickSize(-height + margin.top + margin.bottom)
+        .tickFormat("")  // Hide the tick labels
+      );
+
+    // Create grid lines for Y axis
+    svg.append("g")
+      .attr("transform", `translate(${margin.left}, 0)`)
+      .attr("class", "grid")
+      .call(d3.axisLeft(y)
+        .ticks(5)
+        .tickSize(-width + margin.left + margin.right)
+        .tickFormat("")  // Hide the tick labels
+      );
+
+    // Create the color legend
+    const legend = d3.select("#legend")
+      .selectAll(".legend-item")
+      .data(regions)
+      .join("div")
+      .attr("class", "legend-item");
+
+    legend.append("div")
+      .attr("class", "legend-color")
+      .style("background-color", d => regionColor(d));
+
+    legend.append("span")
+      .text(d => d);
+
+    // Tooltip div (initially hidden)
+    const tooltip = d3.select("#tooltip");
+
+    // Play button functionality
+    let currentYearIndex = 0;
+
+    const playButton = document.getElementById("playButton");
+    const pauseButton = document.getElementById("pauseButton");
+
+    playButton.addEventListener("click", () => {
+      if (!isPlaying) {
+        isPlaying = true;
+        playButton.style.display = "none";
+        pauseButton.style.display = "inline-block";
+        
+        intervalId = setInterval(() => {
+          if (currentYearIndex < formattedData.length - 1) {
+            currentYearIndex++;
+          } else {
+            currentYearIndex = 0;
+          }
+          
+          const currentData = formattedData[currentYearIndex];
+          
+          // Update circles based on the new data
+          svg.selectAll("circle")
+            .data(currentData.data)
+            .join("circle")
+            .transition()
+            .duration(1000)
+            .attr("cx", d => x(d.total_cases))  // X now uses total_cases
+            .attr("cy", d => y(currentData.year))  // Y now uses year
+            .attr("r", d => radius(d.total_cases))
+            .attr("fill", d => regionColor(d.region))
+            .on("click", function(event, d) {
+              // Display the tooltip when the circle is clicked
+              tooltip.transition().duration(200).style("opacity", .9);
+              tooltip.html(`
+                <strong>Year:</strong> ${currentData.year}<br>
+                <strong>Region:</strong> ${d.region}<br>
+                <strong>Total Cases:</strong> ${d.total_cases}<br>
+                <strong>Total Population:</strong> ${d.total_population}
+              `)
+              .style("left", (event.pageX + 5) + "px")
+              .style("top", (event.pageY - 28) + "px");
+            });
+        }, 1000); // Change data every 1 second
+      }
+    });
+
+    // Pause button functionality
+    pauseButton.addEventListener("click", () => {
+      if (isPlaying) {
+        isPlaying = false;
+        clearInterval(intervalId); // Stop the animation
+        playButton.style.display = "inline-block";
+        pauseButton.style.display = "none";
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

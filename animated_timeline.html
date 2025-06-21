@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Animated Timeline Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    .chart {
+      display: flex;
+      justify-content: center;
+    }
+    .buttons {
+      margin: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+    }
+    svg {
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>Animated Timeline Visualization</h1>
+  <div class="buttons">
+    <button id="play-button">Play</button>
+    <button id="pause-button">Pause</button>
+  </div>
+  <div class="chart">
+    <svg width="800" height="600"></svg>
+  </div>
+
+  <script>
+    // Load dataset
+    d3.csv("data.csv").then(function(data) {
+      // Parse data and ensure numeric values
+      data.forEach(d => {
+        d.year = +d.year;
+        d.total_female_cases = +d.total_female_cases;
+        d.cases_per_100k = +d.cases_per_100k;
+      });
+
+      // Debugging: Log the processed data
+      console.log("Processed Data:", data);
+
+      // Set dimensions and margins for the SVG
+      const svg = d3.select("svg"),
+            width = +svg.attr("width"),
+            height = +svg.attr("height"),
+            margin = { top: 20, right: 20, bottom: 40, left: 60 };
+
+      const regions = Array.from(new Set(data.map(d => d.region)));
+      const colorScale = d3.scaleOrdinal(d3.schemeCategory10).domain(regions);
+
+      // Scales for axes
+      const xScale = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.total_female_cases)])
+        .range([margin.left, width - margin.right]);
+
+      const yScale = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.cases_per_100k)])
+        .range([height - margin.bottom, margin.top]);
+
+      // Create axes
+      const xAxis = d3.axisBottom(xScale).ticks(10);
+      const yAxis = d3.axisLeft(yScale).ticks(10);
+
+      svg.append("g")
+        .attr("transform", `translate(0,${height - margin.bottom})`)
+        .attr("class", "x-axis")
+        .call(xAxis);
+
+      svg.append("g")
+        .attr("transform", `translate(${margin.left},0)`)
+        .attr("class", "y-axis")
+        .call(yAxis);
+
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height - 5)
+        .attr("text-anchor", "middle")
+        .text("Total Population");
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("y", 15)
+        .attr("x", -height / 2)
+        .attr("text-anchor", "middle")
+        .text("total_female_cases");
+
+      // Bubble chart group
+      const bubbleGroup = svg.append("g");
+
+      // Year display
+      const yearDisplay = svg.append("text")
+        .attr("x", width - 100)
+        .attr("y", 50)
+        .attr("text-anchor", "end")
+        .attr("font-size", "24px")
+        .attr("fill", "#333");
+
+      // Animation controls
+      let playing = false;
+      let currentYear = d3.min(data, d => d.year);
+
+      function updateChart(year) {
+        const yearData = data.filter(d => d.year === year);
+
+        // Debugging: Log the data for the current year
+        console.log("Year:", year, "Data:", yearData);
+
+        // Update bubbles
+        const bubbles = bubbleGroup.selectAll("circle")
+          .data(yearData, d => d.country);
+
+        // Enter
+        bubbles.enter()
+          .append("circle")
+          .attr("cx", d => xScale(d.total_female_cases))
+          .attr("cy", d => yScale(d.cases_per_100k))
+          .attr("r", 0)
+          .attr("fill", d => colorScale(d.region))
+          .attr("stroke", "black")
+          .attr("stroke-width", 1)
+          .transition()
+          .duration(500)
+          .attr("r", d => Math.sqrt(d.total_female_cases) / 50); // Adjusted scaling
+
+        // Update
+        bubbles
+          .transition()
+          .duration(500)
+          .attr("cx", d => xScale(d.total_female_cases))
+          .attr("cy", d => yScale(d.cases_per_100k))
+          .attr("r", d => Math.sqrt(d.total_female_cases) / 50); // Adjusted scaling
+
+        // Exit
+        bubbles.exit()
+          .transition()
+          .duration(500)
+          .attr("r", 0)
+          .remove();
+
+        // Update year display
+        yearDisplay.text(`Year: ${year}`);
+      }
+
+      function playAnimation() {
+        if (!playing) return;
+
+        updateChart(currentYear);
+        currentYear += 1;
+        if (currentYear > d3.max(data, d => d.year)) {
+          currentYear = d3.min(data, d => d.year);
+        }
+        setTimeout(playAnimation, 1000);
+      }
+
+      // Button events
+      d3.select("#play-button").on("click", () => {
+        playing = true;
+        playAnimation();
+      });
+
+      d3.select("#pause-button").on("click", () => {
+        playing = false;
+      });
+
+      // Initialize chart
+      updateChart(currentYear);
+    }).catch(error => {
+      console.error("Error loading or processing data:", error);
+    });
+  </script>
+</body>
+</html>
